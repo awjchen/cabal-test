@@ -1,0 +1,6 @@
+cradle:
+  cabal:
+    - path: "./cabal-install"
+      component: "cabal-install:exe:cabal"
+    - path: "./Cabal"
+      component: "Cabal:lib:Cabal"
