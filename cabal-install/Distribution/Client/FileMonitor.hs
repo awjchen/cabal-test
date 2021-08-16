@@ -66,6 +66,13 @@ import           System.FilePath
 import           System.Directory
 import           System.IO
 
+import Debug.Trace
+
+------------------------------------------------------------------------------
+
+addIndent :: String -> [String] -> [String]
+addIndent header strings = header : map ("  " ++) strings
+
 ------------------------------------------------------------------------------
 -- Types for specifying files to monitor
 --
@@ -602,7 +609,11 @@ probeMonitorStateFileStatus root file status =
       MonitorStateNonExistent ->
         probeFileNonExistence root file
 
-      MonitorStateAlreadyChanged ->
+      MonitorStateAlreadyChanged -> do
+        traceM $
+          unlines $
+            addIndent "MonitorStateAlreadyChanged:"
+              [file]
         somethingChanged file
 
 
@@ -1043,6 +1054,12 @@ probeFileModificationTimeAndHash root file mtime hash = do
 probeFileExistence :: FilePath -> FilePath -> ChangedM ()
 probeFileExistence root file = do
     existsFile <- liftIO $ doesFileExist (root </> file)
+    traceM $
+      unlines $
+        addIndent "probeFileExistence:"
+          [ file
+          , "exists: " ++ show existsFile
+          ]
     unless existsFile (somethingChanged file)
 
 -- | Within the @root@ directory, check if @dir@ still exists.
@@ -1050,6 +1067,12 @@ probeFileExistence root file = do
 probeDirExistence :: FilePath -> FilePath -> ChangedM ()
 probeDirExistence root dir = do
     existsDir  <- liftIO $ doesDirectoryExist (root </> dir)
+    traceM $
+      unlines $
+        addIndent "probeDirExistence:"
+          [ dir
+          , "exists: " ++ show existsDir
+          ]
     unless existsDir (somethingChanged dir)
 
 -- | Within the @root@ directory, check if @file@ still does not exist.
@@ -1058,7 +1081,14 @@ probeFileNonExistence :: FilePath -> FilePath -> ChangedM ()
 probeFileNonExistence root file = do
     existsFile <- liftIO $ doesFileExist (root </> file)
     existsDir  <- liftIO $ doesDirectoryExist (root </> file)
-    when (existsFile || existsDir) (somethingChanged file)
+    let exists = existsFile || existsDir
+    traceM $
+      unlines $
+        addIndent "probeFileNonExistence:"
+          [ file
+          , "does not exist: "  ++ show (not exists)
+          ]
+    when exists (somethingChanged file)
 
 -- | Returns @True@ if, inside the @root@ directory, @file@ has the same
 -- 'ModTime' as @mtime@.
@@ -1067,7 +1097,14 @@ checkModificationTimeUnchanged :: FilePath -> FilePath
 checkModificationTimeUnchanged root file mtime =
   handleIOException False $ do
     mtime' <- getModTime (root </> file)
-    return (mtime == mtime')
+    let mtimesMatch = mtime == mtime'
+    traceM $
+      unlines $
+        addIndent "checkModificationTimeUnchanged"
+          [ file
+          , "mtimes match: " ++ show mtimesMatch
+          ]
+    return mtimesMatch
 
 -- | Returns @True@ if, inside the @root@ directory, @file@ has the
 -- same 'ModTime' and 'Hash' as @mtime and @chash@.
@@ -1075,12 +1112,27 @@ checkFileModificationTimeAndHashUnchanged :: FilePath -> FilePath
                                           -> ModTime -> Hash -> IO Bool
 checkFileModificationTimeAndHashUnchanged root file mtime chash =
   handleIOException False $ do
+    let debugMsg msgLines =
+          traceM $
+            unlines $
+              addIndent "checkFileModificationTimeAndHashUnchanged" $
+                file : msgLines
     mtime' <- getModTime (root </> file)
     if mtime == mtime'
-      then return True
+      then do
+        debugMsg
+          [ "mtimes match: True"
+          , "hashes match: skipped check"
+          ]
+        return True
       else do
         chash' <- readFileHash (root </> file)
-        return (chash == chash')
+        let hashesMatch = chash == chash'
+        debugMsg
+          [ "mtimes match: False"
+          , "hashes match: " ++ show hashesMatch
+          ]
+        return hashesMatch
 
 -- | Read a non-cryptographic hash of a @file@.
 readFileHash :: FilePath -> IO Hash
